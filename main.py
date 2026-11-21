@@ -96,14 +96,21 @@ class Board:
 
 
 class TicTacToeGame:
-    WIDTH = 600
-    HEIGHT = 700
-    BOARD_TOP = 100
-    CELL_SIZE = 200
-    BACKGROUND = (245, 247, 250)
-    GRID_COLOR = (45, 55, 72)
-    X_COLOR = (220, 70, 70)
-    O_COLOR = (55, 115, 210)
+    WIDTH = 640
+    HEIGHT = 870
+    BOARD_LEFT = 50
+    BOARD_TOP = 250
+    CELL_SIZE = 180
+    BOARD_GAP = 12
+    BACKGROUND = (12, 18, 34)
+    PANEL_COLOR = (20, 29, 49)
+    CELL_COLOR = (27, 39, 63)
+    CELL_HOVER = (36, 52, 81)
+    TEXT_COLOR = (237, 243, 255)
+    MUTED_COLOR = (145, 161, 187)
+    X_COLOR = (74, 216, 255)
+    O_COLOR = (255, 190, 92)
+    ACCENT_COLOR = (119, 112, 255)
 
     def __init__(self, server_address: tuple[str, int] | None = None) -> None:
         self.network = (
@@ -116,9 +123,12 @@ class TicTacToeGame:
         )
         self.screen = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
         self.clock = pygame.time.Clock()
-        self.title_font = pygame.font.Font(None, 48)
-        self.status_font = pygame.font.Font(None, 32)
-        self.mark_font = pygame.font.Font(None, 160)
+        self.title_font = pygame.font.Font(None, 58)
+        self.subtitle_font = pygame.font.Font(None, 24)
+        self.status_font = pygame.font.Font(None, 30)
+        self.player_font = pygame.font.Font(None, 24)
+        self.symbol_font = pygame.font.Font(None, 42)
+        self.footer_font = pygame.font.Font(None, 22)
         self.board = Board()
         self.running = True
         self.player_symbol: str | None = None
@@ -211,10 +221,15 @@ class TicTacToeGame:
 
     def _handle_click(self, position: tuple[int, int]) -> None:
         x, y = position
-        if y < self.BOARD_TOP:
+        board_width = self.CELL_SIZE * 3
+        board_height = self.CELL_SIZE * 3
+        if not (
+            self.BOARD_LEFT <= x < self.BOARD_LEFT + board_width
+            and self.BOARD_TOP <= y < self.BOARD_TOP + board_height
+        ):
             return
 
-        column = x // self.CELL_SIZE
+        column = (x - self.BOARD_LEFT) // self.CELL_SIZE
         row = (y - self.BOARD_TOP) // self.CELL_SIZE
         if 0 <= row < 3 and 0 <= column < 3:
             if self.network is None:
@@ -230,47 +245,173 @@ class TicTacToeGame:
 
     def _draw(self) -> None:
         self.screen.fill(self.BACKGROUND)
+        self._draw_background()
         self._draw_header()
-        self._draw_grid()
+        self._draw_player_cards()
+        self._draw_status()
+        self._draw_board()
         self._draw_marks()
+        self._draw_footer()
         pygame.display.flip()
 
+    def _draw_background(self) -> None:
+        for center, radius, color in (
+            ((30, 95), 130, (18, 31, 56)),
+            ((610, 700), 170, (19, 28, 54)),
+            ((570, 80), 82, (24, 27, 57)),
+        ):
+            pygame.draw.circle(self.screen, color, center, radius)
+
     def _draw_header(self) -> None:
-        title = self.title_font.render("Tic-Tac-Toe", True, self.GRID_COLOR)
-        self.screen.blit(title, title.get_rect(center=(self.WIDTH // 2, 28)))
+        title = self.title_font.render("TIC TAC TOE", True, self.TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(self.WIDTH // 2, 52)))
+        subtitle_text = (
+            "ONLINE MATCH" if self.online else "THE CLASSIC, REIMAGINED"
+        )
+        subtitle = self.subtitle_font.render(
+            subtitle_text, True, self.MUTED_COLOR
+        )
+        self.screen.blit(
+            subtitle, subtitle.get_rect(center=(self.WIDTH // 2, 91))
+        )
 
+    def _draw_player_cards(self) -> None:
+        card_y = 132
+        card_width = 260
+        card_height = 66
+        card_gap = 20
+        players = (("X", self.X_COLOR), ("O", self.O_COLOR))
+        for index, (symbol, color) in enumerate(players):
+            if not self.online:
+                label = f"PLAYER {index + 1}"
+            elif self.player_symbol is None:
+                label = f"PLAYER {symbol}"
+            else:
+                label = "YOU" if symbol == self.player_symbol else "OPPONENT"
+            left = 40 + index * (card_width + card_gap)
+            is_turn = self.board.current_player == symbol and (
+                not self.online or self.player_symbol is not None
+            )
+            card_color = (28, 42, 67) if is_turn else self.PANEL_COLOR
+            pygame.draw.rect(
+                self.screen,
+                card_color,
+                (left, card_y, card_width, card_height),
+                border_radius=18,
+            )
+            if is_turn:
+                pygame.draw.rect(
+                    self.screen,
+                    color,
+                    (left, card_y, card_width, card_height),
+                    width=2,
+                    border_radius=18,
+                )
+            symbol_image = self.symbol_font.render(symbol, True, color)
+            self.screen.blit(
+                symbol_image,
+                symbol_image.get_rect(midleft=(left + 20, card_y + 34)),
+            )
+            label_image = self.player_font.render(
+                label, True, self.TEXT_COLOR if is_turn else self.MUTED_COLOR
+            )
+            self.screen.blit(
+                label_image,
+                label_image.get_rect(midleft=(left + 74, card_y + 33)),
+            )
+            if is_turn:
+                pygame.draw.circle(
+                    self.screen, color, (left + card_width - 20, card_y + 33), 5
+                )
+
+    def _status_message(self) -> tuple[str, tuple[int, int, int]]:
         if self.online and self.player_symbol is None:
-            message = self.network_status
-        elif self.online and self.notification is not None:
-            message = self.notification
-        elif self.board.winner:
-            message = f"{self.board.winner} wins!  Press R to restart"
-        elif self.board.is_draw:
-            message = "It's a draw!  Press R to restart"
-        elif self.online:
-            message = (
-                f"Your turn ({self.player_symbol})"
-                if self.player_symbol == self.board.current_player
-                else f"Opponent's turn ({self.board.current_player})"
-            )
-        else:
-            message = f"{self.board.current_player}'s turn  |  Press R to restart"
+            return self.network_status, self.MUTED_COLOR
+        if self.online and self.notification is not None:
+            return self.notification, (255, 145, 145)
+        if self.board.winner:
+            if not self.online:
+                return f"{self.board.winner} WINS!  Press R to play again", (
+                    self.X_COLOR
+                    if self.board.winner == "X"
+                    else self.O_COLOR
+                )
+            if self.board.winner == self.player_symbol:
+                return (
+                    "YOU WIN!  Press R to play again",
+                    self.X_COLOR if self.player_symbol == "X" else self.O_COLOR,
+                )
+            return "OPPONENT WINS  |  Press R to play again", self.O_COLOR
+        if self.board.is_draw:
+            return "IT'S A DRAW  |  Press R to play again", self.TEXT_COLOR
+        if self.online:
+            if self.player_symbol == self.board.current_player:
+                return "YOUR TURN", self.X_COLOR if self.player_symbol == "X" else self.O_COLOR
+            return "OPPONENT'S TURN", self.MUTED_COLOR
+        return f"{self.board.current_player}'S TURN  |  Press R to restart", (
+            self.X_COLOR if self.board.current_player == "X" else self.O_COLOR
+        )
 
-        status = self.status_font.render(message, True, self.GRID_COLOR)
-        self.screen.blit(status, status.get_rect(center=(self.WIDTH // 2, 70)))
+    def _draw_status(self) -> None:
+        message, color = self._status_message()
+        text = self.status_font.render(message, True, color)
+        max_width = self.WIDTH - 56
+        if text.get_width() > max_width:
+            text = pygame.transform.smoothscale(
+                text, (max_width, text.get_height())
+            )
+        self.screen.blit(text, text.get_rect(center=(self.WIDTH // 2, 222)))
 
-    def _draw_grid(self) -> None:
-        for index in (1, 2):
-            x = index * self.CELL_SIZE
-            y = self.BOARD_TOP + index * self.CELL_SIZE
-            pygame.draw.line(
-                self.screen, self.GRID_COLOR,
-                (x, self.BOARD_TOP), (x, self.HEIGHT), 6,
-            )
-            pygame.draw.line(
-                self.screen, self.GRID_COLOR,
-                (0, y), (self.WIDTH, y), 6,
-            )
+    def _draw_board(self) -> None:
+        board_rect = pygame.Rect(
+            self.BOARD_LEFT - 4,
+            self.BOARD_TOP - 4,
+            self.CELL_SIZE * 3 + 8,
+            self.CELL_SIZE * 3 + 8,
+        )
+        pygame.draw.rect(
+            self.screen, (16, 24, 42), board_rect, border_radius=28
+        )
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        can_play = (
+            self.board.winner is None
+            and not self.board.is_draw
+            and (not self.online or self.player_symbol == self.board.current_player)
+        )
+        for row in range(3):
+            for column in range(3):
+                left = self.BOARD_LEFT + column * self.CELL_SIZE
+                top = self.BOARD_TOP + row * self.CELL_SIZE
+                cell_rect = pygame.Rect(
+                    left + self.BOARD_GAP // 2,
+                    top + self.BOARD_GAP // 2,
+                    self.CELL_SIZE - self.BOARD_GAP,
+                    self.CELL_SIZE - self.BOARD_GAP,
+                )
+                hovered = cell_rect.collidepoint(mouse_x, mouse_y)
+                color = (
+                    self.CELL_HOVER
+                    if hovered and can_play and not self.board.cells[row][column]
+                    else self.CELL_COLOR
+                )
+                pygame.draw.rect(
+                    self.screen, color, cell_rect, border_radius=22
+                )
+                if hovered and can_play and not self.board.cells[row][column]:
+                    pygame.draw.rect(
+                        self.screen,
+                        self.ACCENT_COLOR,
+                        cell_rect,
+                        width=2,
+                        border_radius=22,
+                    )
+
+    def _draw_footer(self) -> None:
+        hint = "CLICK A TILE TO PLAY     •     PRESS R TO RESTART"
+        if self.online:
+            hint = "MAKE YOUR MOVE     •     PRESS R AFTER THE GAME"
+        text = self.footer_font.render(hint, True, self.MUTED_COLOR)
+        self.screen.blit(text, text.get_rect(center=(self.WIDTH // 2, 830)))
 
     def _draw_marks(self) -> None:
         for row in range(3):
@@ -280,12 +421,25 @@ class TicTacToeGame:
                     continue
 
                 color = self.X_COLOR if mark == "X" else self.O_COLOR
-                image = self.mark_font.render(mark, True, color)
                 center = (
-                    column * self.CELL_SIZE + self.CELL_SIZE // 2,
+                    self.BOARD_LEFT + column * self.CELL_SIZE + self.CELL_SIZE // 2,
                     self.BOARD_TOP + row * self.CELL_SIZE + self.CELL_SIZE // 2,
                 )
-                self.screen.blit(image, image.get_rect(center=center))
+                radius = 48
+                stroke = 12
+                if mark == "X":
+                    start_a = (center[0] - radius, center[1] - radius)
+                    end_a = (center[0] + radius, center[1] + radius)
+                    start_b = (center[0] + radius, center[1] - radius)
+                    end_b = (center[0] - radius, center[1] + radius)
+                    for start, end in ((start_a, end_a), (start_b, end_b)):
+                        pygame.draw.line(self.screen, color, start, end, stroke)
+                        pygame.draw.circle(self.screen, color, start, stroke // 2)
+                        pygame.draw.circle(self.screen, color, end, stroke // 2)
+                else:
+                    pygame.draw.circle(
+                        self.screen, color, center, radius, width=stroke
+                    )
 
 
 if __name__ == "__main__":
